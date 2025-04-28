@@ -220,6 +220,10 @@ class RuleRunnerCommand(BaseCommand):
             ]
         )
 
+        core_criteria_count = sum(
+            [breakout_20d or breakout_60d, breakout_confirmed, price_above_50dma, price_above_10ema, dma_slope_up]
+        )
+
         return {
             "Ticker": ticker,
             "Price": round(price, 2),
@@ -244,6 +248,7 @@ class RuleRunnerCommand(BaseCommand):
             "RSI 50-75": rsi_filter,
             "MACD Bullish": macd_bullish,
             "Core Criteria Met": core_conditions_met,
+            "Core Criteria Score": "🟩" * core_criteria_count + "⬜" * (5 - core_criteria_count),
         }
 
     def screen_multiple_stocks(self, tickers, sector, subsector):
@@ -269,6 +274,16 @@ class RuleRunnerCommand(BaseCommand):
             return ""
 
         df = pd.DataFrame(results)
+
+        # Move "Core Criteria Met" to be the third column
+        columns = df.columns.tolist()
+        for col_name in ["Core Criteria Score", "Core Criteria Met"]:
+            if col_name in columns:
+                columns.remove(col_name)
+
+        columns.insert(2, "Core Criteria Met")  # Third column
+        columns.insert(3, "Core Criteria Score")  # Fourth column
+        df = df[columns]
 
         # Convert boolean columns to icons
         for col in df.columns:
