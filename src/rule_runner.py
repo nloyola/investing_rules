@@ -13,7 +13,7 @@ from src.base_command import BaseCommand
 from rich.console import Console
 from src.ticker_group import TickerGroup
 from typing import List
-
+import sys
 
 console = Console()
 
@@ -23,31 +23,110 @@ class RuleRunnerCommand(BaseCommand):
     _DESCRIPTION = "runs the rules on ticker symbols in a JSON file"
 
     _DATA_DIR = "stock_data"
+    _DELISTED_FILE = os.path.join(_DATA_DIR, "delisted.json")
 
     def __init__(self) -> None:
         super().__init__(self._NAME, self._DESCRIPTION)
         os.makedirs(self._DATA_DIR, exist_ok=True)
 
+        # Ensure it's a set
+        self.delisted_cache = set(self.load_delisted_cache())
+
     def add_arguments(self, parser: argparse.ArgumentParser) -> None:
         parser.add_argument("--json", help="use the stock tickers from the JSON file")
+        parser.add_argument("--sector", help="filter groups by sector name (case-insensitive)")
 
     def handle(self, args: argparse.Namespace) -> None:
         json_file = args.json
+        sector_filter = args.sector.lower() if args.sector else None
+
         with open(json_file) as f:
             data = json.load(f)
             groups = [TickerGroup.from_dict(item) for item in data]
-            console.print(f"ticker groups {groups[0]}\n", style="orange1")
-            self.screen_multiple_stocks(groups[0].tickers)
+
+        if sector_filter:
+            groups = [g for g in groups if g.sector.lower() == sector_filter]
+            if not groups:
+                console.print(f"[red]❌ No groups found for sector:[/red] '{args.sector}'")
+                return
+
+        html_sections = []
+        for group in groups:
+            html_sections.append(self.screen_multiple_stocks(group.tickers, group.sector, group.subsector))
+
+        full_html_body = "\n".join(html_sections)
+
+        html = f"""
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Stock Screening Results</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-50 text-gray-900 p-8">
+  <div class="max-w-screen-2xl mx-auto">
+    <h1 class="text-3xl font-bold mb-6">📊 Stock Screening Results</h1>
+    {full_html_body}
+  </div>
+</body>
+</html>
+"""
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".html", mode="w", encoding="utf-8") as f:
+            f.write(html)
+            temp_path = f.name
+
+        print(f"✅ Styled HTML saved to: {temp_path}")
+        webbrowser.open(f"file://{os.path.abspath(temp_path)}")
+
+    def load_delisted_cache(self):
+        if os.path.exists(self._DELISTED_FILE):
+            with open(self._DELISTED_FILE, "r") as f:
+                return set(json.load(f))
+        return set()
+
+    def save_delisted_cache(self):
+        with open(self._DELISTED_FILE, "w") as f:
+            json.dump(list(self.delisted_cache), f)
 
     def get_delisted_tickers(self, tickers: List[str]):
         delisted = []
+
         for ticker in tickers:
+            if ticker in self.delisted_cache:
+                delisted.append(ticker)
+                continue
+
             try:
-                df = yf.download(ticker, period="1d")
+                print(f"📉 Checking if delisted: {ticker}")
+                df = yf.download(ticker, period="1d", progress=True)
                 if df.empty or "Close" not in df.columns:
+                    self.delisted_cache.add(ticker)
                     delisted.append(ticker)
             except Exception:
+                self.delisted_cache.add(ticker)
                 delisted.append(ticker)
+
+        self.save_delisted_cache()
+        return delisted
+
+    def get_delisted_tickers2(self, tickers: List[str]):
+        self.delisted_cache = self.load_delisted_cache()
+        delisted = []
+        for ticker in tickers:
+            if ticker in self.delisted_cache:
+                delisted.append(ticker)
+                continue
+            try:
+                print(f"checking delisted ticker: {ticker}")
+                df = yf.download(ticker, period="1d")
+                if df.empty or "Close" not in df.columns:
+                    self.delisted_cache.add(ticker)
+                    delisted.append(ticker)
+            except Exception:
+                self.delisted_cache.add(ticker)
+                delisted.append(ticker)
+        self.save_delisted_cache()
         return delisted
 
     def load_or_download_data(self, ticker: str, max_age_days: int = 1) -> pd.DataFrame:
@@ -160,15 +239,12 @@ class RuleRunnerCommand(BaseCommand):
             "Core Criteria Met": core_conditions_met,
         }
 
-    def screen_multiple_stocks(self, tickers):
+    def screen_multiple_stocks(self, tickers, sector, subsector):
         results = []
-
         delisted = self.get_delisted_tickers(tickers)
-        if delisted:
-            print("⚠️ Delisted tickers excluded:", ", ".join(delisted))
-        tickers = [t for t in tickers if t not in delisted]
+        valid_tickers = [t for t in tickers if t not in delisted]
 
-        for ticker in tickers:
+        for ticker in valid_tickers:
             try:
                 result = self.check_stock_criteria(ticker)
                 if not isinstance(result, dict):
@@ -183,19 +259,23 @@ class RuleRunnerCommand(BaseCommand):
                 results.append({"Ticker": ticker, "Error": str(e), "Available Columns": columns})
 
         if not results:
-            print("No results to display.")
-            return
+            return ""
 
         df = pd.DataFrame(results)
+
+        # Convert boolean columns to icons
+        for col in df.columns:
+            if df[col].dtype == bool:
+                df[col] = df[col].map({True: "✅", False: "❌"})
 
         table_html = df.to_html(
             index=False,
             escape=False,
             border=0,
             classes="table-auto w-full text-sm text-gray-700",
+            na_rep="–",
         )
 
-        # Inject Tailwind classes
         table_html = (
             table_html.replace("<table", '<table class="table-auto w-full border-collapse text-sm text-gray-700"')
             .replace("<thead>", '<thead class="bg-gray-100 text-left font-semibold">')
@@ -203,28 +283,33 @@ class RuleRunnerCommand(BaseCommand):
             .replace("<td>", '<td class="px-4 py-2 border-t border-gray-200 align-top">')
         )
 
-        html = f"""
-    <!DOCTYPE html>
-    <html lang="en">
-    <head>
-      <meta charset="UTF-8">
-      <title>Stock Screening Results</title>
-      <script src="https://cdn.tailwindcss.com"></script>
-    </head>
-    <body class="bg-gray-50 text-gray-900 p-8">
-      <div class="max-w-screen-2xl mx-auto">
-        <h1 class="text-3xl font-bold mb-6">📊 Stock Screening Results</h1>
-        <div class="overflow-auto rounded shadow bg-white p-4 border border-gray-200">
-          {table_html}
+        # Sector/Subsector section heading
+        section_heading_html = f"""
+        <div class="mb-6">
+            <h2 class="text-2xl font-bold text-gray-800">{sector}</h2>
+            <h3 class="text-xl font-semibold text-gray-600">{subsector}</h3>
         </div>
-      </div>
-    </body>
-    </html>
-    """
+        """
 
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".html", mode="w", encoding="utf-8") as f:
-            f.write(html)
-            temp_path = f.name
+        # Delisted tickers section
+        delisted_html = ""
+        if delisted:
+            delisted_html = f"""
+            <div class="mt-4 bg-red-50 border border-red-200 text-red-800 p-4 rounded shadow">
+                <h4 class="font-semibold mb-1">⚠️ Delisted or Invalid Tickers</h4>
+                <ul class="list-disc list-inside text-sm">
+                    {''.join(f'<li>{ticker}</li>' for ticker in delisted)}
+                </ul>
+            </div>
+            """
 
-        print(f"✅ Styled HTML saved to: {temp_path}")
-        webbrowser.open(f"file://{os.path.abspath(temp_path)}")
+        # Full section HTML
+        return f"""
+        <div class="mb-12">
+            {section_heading_html}
+            <div class="overflow-auto rounded shadow bg-white p-4 border border-gray-200">
+                {table_html}
+            </div>
+            {delisted_html}
+        </div>
+        """
