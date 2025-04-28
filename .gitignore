@@ -9,3 +9,5 @@ wheels/
 # Virtual environments
 .venv
 /stock_data/
+/*.json
+/*.xlsx

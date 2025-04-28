@@ -6,30 +6,20 @@ import os
 import json
 import io
 from datetime import datetime, timedelta
+from rich.console import Console
+from rich.table import Table
 import sys
-import webbrowser
-import tempfile
 
 DATA_DIR = "stock_data"
 os.makedirs(DATA_DIR, exist_ok=True)
+
+console = Console(width=200)
 
 
 def load_tickers_from_file(filename="tickers.txt"):
     with open(filename, "r") as f:
         tickers = [line.strip() for line in f if line.strip()]
     return tickers
-
-
-def get_delisted_tickers(tickers):
-    delisted = []
-    for ticker in tickers:
-        try:
-            df = yf.download(ticker, period="1d")
-            if df.empty or "Close" not in df.columns:
-                delisted.append(ticker)
-        except Exception:
-            delisted.append(ticker)
-    return delisted
 
 
 def load_or_download_data(ticker: str, max_age_days: int = 1) -> pd.DataFrame:
@@ -40,23 +30,33 @@ def load_or_download_data(ticker: str, max_age_days: int = 1) -> pd.DataFrame:
             raw = json.load(f)
             timestamp = datetime.fromisoformat(raw["timestamp"])
             if datetime.now() - timestamp < timedelta(days=max_age_days):
-                print(f"📦 Using cached data for {ticker}")
+                console.print(
+                    f"📦 Using cached data for [bold]{ticker}[/bold]", style="cyan"
+                )
                 df = pd.read_json(io.StringIO(raw["data"]), convert_dates=True)
                 df.index = pd.to_datetime(df.index)
+                # Flatten columns if needed
                 if isinstance(df.columns, pd.MultiIndex):
                     df.columns = df.columns.get_level_values(0)
                 return df
 
-    print(f"⬇️  Downloading new data for {ticker}")
+    console.print(f"⬇️  Downloading new data for [bold]{ticker}[/bold]", style="yellow")
     df = yf.download(ticker, period="90d", interval="1d")
-    if df.empty or "Close" not in df.columns:
-        raise ValueError(f"No valid price data found for {ticker}")
+    # Flatten columns if MultiIndex
     if isinstance(df.columns, pd.MultiIndex):
         df.columns = df.columns.get_level_values(0)
     df_json = df.to_json(date_format="iso")
     with open(file_path, "w") as f:
         json.dump({"timestamp": datetime.now().isoformat(), "data": df_json}, f)
     return df
+
+
+def show_yf_data(df: pd.DataFrame, ticker: str):
+    print(f"\n🔍 Raw Yahoo Finance data for {ticker}:")
+    print(df.tail(10))
+    print("\n🧾 DataFrame Info:")
+    print(df.info())
+    print("\n🧾 Column Names:", df.columns.tolist())
 
 
 def check_stock_criteria(ticker: str):
@@ -68,16 +68,23 @@ def check_stock_criteria(ticker: str):
             "Available Columns": ", ".join(df.columns),
         }
 
+    # show_yf_data(df, ticker)
+    # sys.exit()
+
+    # Calculate moving averages and average volume
     df["50dma"] = df["Close"].rolling(window=50).mean()
     df["volume_avg_20"] = df["Volume"].rolling(window=20).mean()
 
+    # Ensure close is a proper 1D Series
     close_series = df["Close"].squeeze()
 
+    # Technical Indicators
     rsi = RSIIndicator(close=close_series).rsi()
     macd_calc = MACD(close=close_series)
     macd_line = macd_calc.macd()
     signal_line = macd_calc.macd_signal()
 
+    # Extract latest values and convert to scalar values
     price = df["Close"].iloc[-1].item()
     volume = df["Volume"].iloc[-1].item()
     avg_vol = df["volume_avg_20"].iloc[-1].item()
@@ -88,6 +95,7 @@ def check_stock_criteria(ticker: str):
     macd_val = macd_line.iloc[-1].item()
     signal_val = signal_line.iloc[-1].item()
 
+    # Check conditions
     is_breakout = price > recent_high
     breakout_volume_confirmed = volume > 1.5 * avg_vol
     price_above_50dma = price > dma_50
@@ -120,13 +128,14 @@ def check_stock_criteria(ticker: str):
     }
 
 
+import pandas as pd
+import webbrowser
+import tempfile
+import os
+
+
 def screen_multiple_stocks(tickers):
     results = []
-
-    delisted = get_delisted_tickers(tickers)
-    if delisted:
-        print("⚠️ Delisted tickers excluded:", ", ".join(delisted))
-    tickers = [t for t in tickers if t not in delisted]
 
     for ticker in tickers:
         try:
@@ -148,6 +157,7 @@ def screen_multiple_stocks(tickers):
         print("No results to display.")
         return
 
+    # Preferred column order
     preferred_columns = [
         "Ticker",
         "Price",
@@ -179,6 +189,7 @@ def screen_multiple_stocks(tickers):
     ]
     df = df[all_columns]
 
+    # Create HTML table with Tailwind styling
     table_html = df.to_html(
         index=False,
         escape=False,
@@ -226,11 +237,8 @@ def screen_multiple_stocks(tickers):
     webbrowser.open(f"file://{os.path.abspath(temp_path)}")
 
 
+# Test the function
 if __name__ == "__main__":
-    if len(sys.argv) != 2:
-        print("Usage: python script_name.py <ticker_file.txt>")
-        sys.exit(1)
-
-    ticker_file = sys.argv[1]
-    tickers = load_tickers_from_file(ticker_file)
+    # tickers = load_tickers_from_file()
+    tickers = ["MMM", "AOS", "ABT", "ABBV", "ACN"]
     screen_multiple_stocks(tickers)
