@@ -23,14 +23,13 @@ class RuleRunnerCommand(BaseCommand):
     _DESCRIPTION = "runs the rules on ticker symbols in a JSON file"
 
     _DATA_DIR = "stock_data"
-    _DELISTED_FILE = os.path.join(_DATA_DIR, "delisted.json")
+    _STATUS_FILE = os.path.join(_DATA_DIR, "symbol_status.json")
 
     def __init__(self) -> None:
         super().__init__(self._NAME, self._DESCRIPTION)
         os.makedirs(self._DATA_DIR, exist_ok=True)
 
-        # Ensure it's a set
-        self.delisted_cache = set(self.load_delisted_cache())
+        self.symbol_status_cache = self.load_symbol_status_cache()
 
     def add_arguments(self, parser: argparse.ArgumentParser) -> None:
         parser.add_argument("--json", help="use the stock tickers from the JSON file")
@@ -54,6 +53,7 @@ class RuleRunnerCommand(BaseCommand):
         for group in groups:
             html_sections.append(self.screen_multiple_stocks(group.tickers, group.sector, group.subsector))
 
+        self.save_symbol_status_cache()
         full_html_body = "\n".join(html_sections)
 
         html = f"""
@@ -79,35 +79,42 @@ class RuleRunnerCommand(BaseCommand):
         print(f"✅ Styled HTML saved to: {temp_path}")
         webbrowser.open(f"file://{os.path.abspath(temp_path)}")
 
-    def load_delisted_cache(self):
-        if os.path.exists(self._DELISTED_FILE):
-            with open(self._DELISTED_FILE, "r") as f:
-                return set(json.load(f))
-        return set()
+    def load_symbol_status_cache(self):
+        if os.path.exists(self._STATUS_FILE):
+            with open(self._STATUS_FILE, "r") as f:
+                return json.load(f)
+        return {}
 
-    def save_delisted_cache(self):
-        with open(self._DELISTED_FILE, "w") as f:
-            json.dump(list(self.delisted_cache), f)
+    def save_symbol_status_cache(self):
+        with open(self._STATUS_FILE, "w") as f:
+            json.dump(self.symbol_status_cache, f, indent=2)
 
-    def get_delisted_tickers(self, tickers: List[str]):
+    def get_delisted_tickers(self, tickers: List[str], max_age_days: int = 1):
         delisted = []
+        now = datetime.now()
 
         for ticker in tickers:
-            if ticker in self.delisted_cache:
-                delisted.append(ticker)
-                continue
+            cached = self.symbol_status_cache.get(ticker)
+            if cached:
+                ts = datetime.fromisoformat(cached["timestamp"])
+                if now - ts < timedelta(days=max_age_days):
+                    if cached["delisted"]:
+                        delisted.append(ticker)
+                    continue  # Cached and still valid
 
+            # Otherwise, fetch fresh
             try:
-                print(f"📉 Checking if delisted: {ticker}")
-                df = yf.download(ticker, period="1d", progress=True)
-                if df.empty or "Close" not in df.columns:
-                    self.delisted_cache.add(ticker)
-                    delisted.append(ticker)
+                print(f"🔍 Checking status for: {ticker}")
+                df = yf.download(ticker, period="1d", progress=False)
+                is_delisted = df.empty or "Close" not in df.columns
             except Exception:
-                self.delisted_cache.add(ticker)
+                is_delisted = True
+
+            self.symbol_status_cache[ticker] = {"delisted": is_delisted, "timestamp": now.isoformat()}
+
+            if is_delisted:
                 delisted.append(ticker)
 
-        self.save_delisted_cache()
         return delisted
 
     def get_delisted_tickers2(self, tickers: List[str]):
