@@ -1,0 +1,15 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Stock Screening Results</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+  </head>
+  <body class="bg-gray-50 text-gray-900 p-8">
+    <div class="max-w-screen-2xl mx-auto">
+      <h1 class="text-3xl font-bold mb-6">📊 Stock Screening Results</h1>
+      {{ data|safe }}
+    </div>
+    <p class="text-red-500"><a href="/">run again</a></p>
+  </body>
+</html>

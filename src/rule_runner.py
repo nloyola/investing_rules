@@ -6,42 +6,25 @@ import os
 import json
 import io
 from datetime import datetime, timedelta
-import webbrowser
-import tempfile
-import argparse
-from src.base_command import BaseCommand
-from rich.console import Console
 from src.ticker_group import TickerGroup
-from typing import List
-import sys
-
-# 4 and above
-
-console = Console()
+from typing import List, Callable
 
 
-class RuleRunnerCommand(BaseCommand):
-    _NAME = "rule-runner"
-    _DESCRIPTION = "runs the rules on ticker symbols in a JSON file"
-
+class RuleRunner:
     _DATA_DIR = "stock_data"
     _STATUS_FILE = os.path.join(_DATA_DIR, "symbol_status.json")
 
     _YAHOO_CHART_HASH = "#eyJsYXlvdXQiOnsiaW50ZXJ2YWwiOiJkYXkiLCJwZXJpb2RpY2l0eSI6MSwidGltZVVuaXQiOm51bGwsImNhbmRsZVdpZHRoIjoxOS4zMTc0NjAzMTc0NjAzMTYsImZsaXBwZWQiOmZhbHNlLCJ2b2x1bWVVbmRlcmxheSI6dHJ1ZSwiYWRqIjp0cnVlLCJjcm9zc2hhaXIiOnRydWUsImNoYXJ0VHlwZSI6ImNhbmRsZSIsImV4dGVuZGVkIjpmYWxzZSwibWFya2V0U2Vzc2lvbnMiOnt9LCJhZ2dyZWdhdGlvblR5cGUiOiJvaGxjIiwiY2hhcnRTY2FsZSI6ImxpbmVhciIsInN0dWRpZXMiOnsi4oCMdm9sIHVuZHLigIwiOnsidHlwZSI6InZvbCB1bmRyIiwiaW5wdXRzIjp7IlNlcmllcyI6InNlcmllcyIsImlkIjoi4oCMdm9sIHVuZHLigIwiLCJkaXNwbGF5Ijoi4oCMdm9sIHVuZHLigIwifSwib3V0cHV0cyI6eyJVcCBWb2x1bWUiOiIjMGRiZDZlZWUiLCJEb3duIFZvbHVtZSI6IiNmZjU1NDdlZSJ9LCJwYW5lbCI6ImNoYXJ0IiwicGFyYW1ldGVycyI6eyJjaGFydE5hbWUiOiJjaGFydCIsImVkaXRNb2RlIjp0cnVlLCJwYW5lbE5hbWUiOiJjaGFydCJ9LCJkaXNhYmxlZCI6ZmFsc2V9LCLigIxtYeKAjCAoMTAwLG1hLDApIjp7InR5cGUiOiJtYSIsImlucHV0cyI6eyJQZXJpb2QiOiIxMDAiLCJGaWVsZCI6ImZpZWxkIiwiVHlwZSI6Im1hIiwiT2Zmc2V0IjowLCJpZCI6IuKAjG1h4oCMICgxMDAsbWEsMCkiLCJkaXNwbGF5Ijoi4oCMbWHigIwgKDEwMCxtYSwwKSJ9LCJvdXRwdXRzIjp7Ik1BIjp7ImNvbG9yIjoiIzAwYWZlZCJ9fSwicGFuZWwiOiJjaGFydCIsInBhcmFtZXRlcnMiOnsiY2hhcnROYW1lIjoiY2hhcnQiLCJlZGl0TW9kZSI6dHJ1ZSwicGFuZWxOYW1lIjoiY2hhcnQifSwiZGlzYWJsZWQiOmZhbHNlfSwi4oCMbWHigIwgKDIwMCxtYSwwKSI6eyJ0eXBlIjoibWEiLCJpbnB1dHMiOnsiUGVyaW9kIjoiMjAwIiwiRmllbGQiOiJmaWVsZCIsIlR5cGUiOiJtYSIsIk9mZnNldCI6MCwiaWQiOiLigIxtYeKAjCAoMjAwLG1hLDApIiwiZGlzcGxheSI6IuKAjG1h4oCMICgyMDAsbWEsMCkifSwib3V0cHV0cyI6eyJNQSI6eyJjb2xvciI6IiMwMDcyMzgifX0sInBhbmVsIjoiY2hhcnQiLCJwYXJhbWV0ZXJzIjp7ImNoYXJ0TmFtZSI6ImNoYXJ0IiwiZWRpdE1vZGUiOnRydWUsInBhbmVsTmFtZSI6ImNoYXJ0In0sImRpc2FibGVkIjpmYWxzZX0sIuKAjG1h4oCMICg1MCxtYSwwKS0yIjp7InR5cGUiOiJtYSIsImlucHV0cyI6eyJQZXJpb2QiOjUwLCJGaWVsZCI6ImZpZWxkIiwiVHlwZSI6Im1hIiwiT2Zmc2V0IjowLCJpZCI6IuKAjG1h4oCMICg1MCxtYSwwKS0yIiwiZGlzcGxheSI6IuKAjG1h4oCMICg1MCxtYSwwKS0yIn0sIm91dHB1dHMiOnsiTUEiOiIjRkYwMDAwIn0sInBhbmVsIjoiY2hhcnQiLCJwYXJhbWV0ZXJzIjp7ImNoYXJ0TmFtZSI6ImNoYXJ0IiwiZWRpdE1vZGUiOnRydWUsInBhbmVsTmFtZSI6ImNoYXJ0In0sImRpc2FibGVkIjpmYWxzZX0sIuKAjHJzaeKAjCAoMTQpLTIiOnsidHlwZSI6InJzaSIsImlucHV0cyI6eyJQZXJpb2QiOjE0LCJGaWVsZCI6ImZpZWxkIiwiaWQiOiLigIxyc2nigIwgKDE0KS0yIiwiZGlzcGxheSI6IuKAjHJzaeKAjCAoMTQpLTIifSwib3V0cHV0cyI6eyJSU0kiOiJhdXRvIn0sInBhbmVsIjoi4oCMcnNp4oCMICgxNCktMiIsInBhcmFtZXRlcnMiOnsic3R1ZHlPdmVyWm9uZXNFbmFibGVkIjp0cnVlLCJzdHVkeU92ZXJCb3VnaHRWYWx1ZSI6ODAsInN0dWR5T3ZlckJvdWdodENvbG9yIjoiYXV0byIsInN0dWR5T3ZlclNvbGRWYWx1ZSI6MjAsInN0dWR5T3ZlclNvbGRDb2xvciI6ImF1dG8iLCJjaGFydE5hbWUiOiJjaGFydCIsImVkaXRNb2RlIjp0cnVlLCJwYW5lbE5hbWUiOiLigIxyc2nigIwgKDE0KS0yIn0sImRpc2FibGVkIjpmYWxzZX0sIuKAjG1h4oCMICgxMCxlbWEsMCkiOnsidHlwZSI6Im1hIiwiaW5wdXRzIjp7IlBlcmlvZCI6IjEwIiwiRmllbGQiOiJmaWVsZCIsIlR5cGUiOiJleHBvbmVudGlhbCIsIk9mZnNldCI6MCwiaWQiOiLigIxtYeKAjCAoMTAsZW1hLDApIiwiZGlzcGxheSI6IuKAjG1h4oCMICgxMCxlbWEsMCkifSwib3V0cHV0cyI6eyJNQSI6eyJjb2xvciI6IiM4NTYxYTcifX0sInBhbmVsIjoiY2hhcnQiLCJwYXJhbWV0ZXJzIjp7ImNoYXJ0TmFtZSI6ImNoYXJ0IiwiZWRpdE1vZGUiOnRydWV9LCJkaXNhYmxlZCI6ZmFsc2V9fSwicGFuZWxzIjp7ImNoYXJ0Ijp7InBlcmNlbnQiOjAuNzYxOTA0NzYxOTA0NzYyLCJkaXNwbGF5IjoiTlZTIiwiY2hhcnROYW1lIjoiY2hhcnQiLCJpbmRleCI6MCwieUF4aXMiOnsibmFtZSI6ImNoYXJ0IiwicG9zaXRpb24iOm51bGx9LCJ5YXhpc0xIUyI6W10sInlheGlzUkhTIjpbImNoYXJ0Iiwi4oCMdm9sIHVuZHLigIwiXX0sIuKAjHJzaeKAjCAoMTQpLTIiOnsicGVyY2VudCI6MC4yMzgwOTUyMzgwOTUyMzgwNSwiZGlzcGxheSI6IuKAjHJzaeKAjCAoMTQpLTIiLCJjaGFydE5hbWUiOiJjaGFydCIsImluZGV4IjoxLCJ5QXhpcyI6eyJuYW1lIjoi4oCMcnNp4oCMICgxNCktMiIsInBvc2l0aW9uIjpudWxsfSwieWF4aXNMSFMiOltdLCJ5YXhpc1JIUyI6WyLigIxyc2nigIwgKDE0KS0yIl19fSwic2V0U3BhbiI6eyJtdWx0aXBsaWVyIjozLCJiYXNlIjoibW9udGgiLCJwZXJpb2RpY2l0eSI6eyJwZXJpb2QiOjEsInRpbWVVbml0IjoiZGF5In0sInNob3dFdmVudHNRdW90ZSI6dHJ1ZSwiZm9yY2VMb2FkIjpmYWxzZSwidXNlRXhpc3RpbmdEYXRhIjp0cnVlfSwib3V0bGllcnMiOmZhbHNlLCJhbmltYXRpb24iOnRydWUsImhlYWRzVXAiOnsic3RhdGljIjp0cnVlLCJkeW5hbWljIjpmYWxzZSwiZmxvYXRpbmciOmZhbHNlfSwibGluZVdpZHRoIjoyLCJmdWxsU2NyZWVuIjp0cnVlLCJzdHJpcGVkQmFja2dyb3VuZCI6dHJ1ZSwiY29sb3IiOiIjMDA4MWYyIiwiY3Jvc3NoYWlyU3RpY2t5IjpmYWxzZSwiZG9udFNhdmVSYW5nZVRvTGF5b3V0Ijp0cnVlLCJzeW1ib2xzIjpbeyJzeW1ib2wiOiJOVlMiLCJzeW1ib2xPYmplY3QiOnsic3ltYm9sIjoiTlZTIiwicXVvdGVUeXBlIjoiRVFVSVRZIiwiZXhjaGFuZ2VUaW1lWm9uZSI6IkFtZXJpY2EvTmV3X1lvcmsiLCJwZXJpb2QxIjoxNjYzNjI0ODAwLCJwZXJpb2QyIjoxNzQ1ODcwNDAwfSwicGVyaW9kaWNpdHkiOjEsImludGVydmFsIjoiZGF5IiwidGltZVVuaXQiOm51bGwsInNldFNwYW4iOnsibXVsdGlwbGllciI6MywiYmFzZSI6Im1vbnRoIiwicGVyaW9kaWNpdHkiOnsicGVyaW9kIjoxLCJ0aW1lVW5pdCI6ImRheSJ9LCJzaG93RXZlbnRzUXVvdGUiOnRydWUsImZvcmNlTG9hZCI6ZmFsc2UsInVzZUV4aXN0aW5nRGF0YSI6dHJ1ZX19XX0sImV2ZW50cyI6eyJkaXZzIjp0cnVlLCJzcGxpdHMiOnRydWUsInRyYWRpbmdIb3Jpem9uIjoibm9uZSIsInNpZ0RldkV2ZW50cyI6W119LCJwcmVmZXJlbmNlcyI6e319"
 
     def __init__(self) -> None:
-        super().__init__(self._NAME, self._DESCRIPTION)
         os.makedirs(self._DATA_DIR, exist_ok=True)
 
         self.symbol_status_cache = self.load_symbol_status_cache()
 
-    def add_arguments(self, parser: argparse.ArgumentParser) -> None:
-        parser.add_argument("--json", help="use the stock tickers from the JSON file")
-        parser.add_argument("--sector", help="filter groups by sector name (case-insensitive)")
-
-    def handle(self, args: argparse.Namespace) -> None:
-        json_file = args.json
-        sector_filter = args.sector.lower() if args.sector else None
+    def do_work(self, callback: Callable[[str], None]) -> str:
+        self.callback = callback
+        json_file = "output.json"
+        sector_filter = "energy"
 
         with open(json_file) as f:
             data = json.load(f)
@@ -50,38 +33,16 @@ class RuleRunnerCommand(BaseCommand):
         if sector_filter:
             groups = [g for g in groups if g.sector.lower() == sector_filter]
             if not groups:
-                console.print(f"[red]❌ No groups found for sector:[/red] '{args.sector}'")
-                return
+                callback(f"❌ No groups found for sector: '{sector_filter}'")
+                return ""
 
         html_sections = []
         for group in groups:
             html_sections.append(self.screen_multiple_stocks(group.tickers, group.sector, group.subsector))
 
         self.save_symbol_status_cache()
-        full_html_body = "\n".join(html_sections)
-
-        html = f"""
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <title>Stock Screening Results</title>
-  <script src="https://cdn.tailwindcss.com"></script>
-</head>
-<body class="bg-gray-50 text-gray-900 p-8">
-  <div class="max-w-screen-2xl mx-auto">
-    <h1 class="text-3xl font-bold mb-6">📊 Stock Screening Results</h1>
-    {full_html_body}
-  </div>
-</body>
-</html>
-"""
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".html", mode="w", encoding="utf-8") as f:
-            f.write(html)
-            temp_path = f.name
-
-        print(f"✅ Styled HTML saved to: {temp_path}")
-        webbrowser.open(f"file://{os.path.abspath(temp_path)}")
+        full_html_body = "".join(html_sections)
+        return full_html_body
 
     def load_symbol_status_cache(self):
         if os.path.exists(self._STATUS_FILE):
@@ -108,7 +69,7 @@ class RuleRunnerCommand(BaseCommand):
 
             # Otherwise, fetch fresh
             try:
-                print(f"🔍 Checking status for: {ticker}")
+                self.callback(f"🔍 Checking status for: {ticker}")
                 df = yf.download(ticker, period="1d", progress=False)
                 is_delisted = df.empty or "Close" not in df.columns
             except Exception:
@@ -129,7 +90,7 @@ class RuleRunnerCommand(BaseCommand):
                 delisted.append(ticker)
                 continue
             try:
-                print(f"checking delisted ticker: {ticker}")
+                self.callback(f"checking delisted ticker: {ticker}")
                 df = yf.download(ticker, period="1d")
                 if df.empty or "Close" not in df.columns:
                     self.delisted_cache.add(ticker)
@@ -148,14 +109,14 @@ class RuleRunnerCommand(BaseCommand):
                 raw = json.load(f)
                 timestamp = datetime.fromisoformat(raw["timestamp"])
                 if datetime.now() - timestamp < timedelta(days=max_age_days):
-                    print(f"📦 Using cached data for {ticker}")
+                    self.callback(f"📦 Using cached data for {ticker}<br>")
                     df = pd.read_json(io.StringIO(raw["data"]), convert_dates=True)
                     df.index = pd.to_datetime(df.index)
                     if isinstance(df.columns, pd.MultiIndex):
                         df.columns = df.columns.get_level_values(0)
                     return df
 
-        print(f"⬇️  Downloading new data for {ticker}")
+        self.callback(f"⬇️  Downloading new data for {ticker}")
         df = yf.download(ticker, period="90d", interval="1d")
         if df.empty or "Close" not in df.columns:
             raise ValueError(f"No valid price data found for {ticker}")
