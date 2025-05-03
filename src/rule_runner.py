@@ -6,6 +6,7 @@ import os
 import json
 import io
 from datetime import datetime, timedelta
+import pytz
 import webbrowser
 import tempfile
 import argparse
@@ -72,6 +73,10 @@ class RuleRunnerCommand(BaseCommand):
         # Combine all sections
         sections_html = "\n".join(html_sections)
 
+        # Get the current timestamp with timezone
+        timezone = pytz.timezone("America/New_York")  # Replace with your desired timezone
+        current_time = datetime.now(timezone).strftime("%Y-%m-%d %H:%M:%S %Z")
+
         # Set up Jinja2 environment
         env = Environment(loader=FileSystemLoader(os.path.dirname(__file__) + "/../"))
         template = env.get_template("templates/index.html")
@@ -81,6 +86,7 @@ class RuleRunnerCommand(BaseCommand):
             title="Stock Screening Results",
             top_criteria_html=top_criteria_html,
             sections_html=sections_html,
+            current_time=current_time,  # Pass the timestamp with timezone to the template
         )
 
         # Save the rendered HTML to a file
