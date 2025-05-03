@@ -69,12 +69,13 @@ class RuleRunnerCommand(BaseCommand):
         </html>
         """
 
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".html", mode="w", encoding="utf-8") as f:
+        output_path = os.path.join("public", "index.html")
+        os.makedirs(os.path.dirname(output_path), exist_ok=True)
+        with open(output_path, "w", encoding="utf-8") as f:
             f.write(html)
-            temp_path = f.name
 
-        print(f"✅ Styled HTML saved to: {temp_path}")
-        webbrowser.open(f"file://{os.path.abspath(temp_path)}")
+        print(f"✅ Styled HTML saved to: {output_path}")
+        webbrowser.open(f"file://{os.path.abspath(output_path)}")
 
     def load_cached_data(self, ticker: str) -> pd.DataFrame | None:
         file_path = os.path.join(self._DATA_DIR, f"{ticker}.json")
@@ -227,7 +228,8 @@ class RuleRunnerCommand(BaseCommand):
                 result = self.check_stock_criteria(ticker, df=data_map[ticker])
                 results.append(result)
             except Exception as e:
-                invalid_tickers.append(ticker)
+                print(f"⚠️ Error processing ticker {ticker}: {e}")
+                invalid_tickers.append(ticker)  # Add to invalid_tickers if an exception occurs
 
         if invalid_tickers:
             print(f"⚠️ Invalid or no data for tickers: {', '.join(invalid_tickers)}")
@@ -242,7 +244,7 @@ class RuleRunnerCommand(BaseCommand):
 
         if "Ticker" in df.columns:
             df["Ticker"] = df["Ticker"].apply(
-                lambda t: f'<a href="https://finance.yahoo.com/chart/{t}{self._YAHOO_CHART_HASH}" target="_blank" class="text-blue-600 underline">{t}</a>'
+                lambda t: f'<a href="https://finance.yahoo.com/quote/{t}" target="_blank" class="text-blue-600 underline">{t}</a>'
             )
 
         for col in df.columns:
