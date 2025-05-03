@@ -13,6 +13,7 @@ from src.base_command import BaseCommand
 from rich.console import Console
 from src.ticker_group import TickerGroup
 from typing import List
+from jinja2 import Environment, FileSystemLoader
 
 console = Console()
 
@@ -51,46 +52,44 @@ class RuleRunnerCommand(BaseCommand):
 
         for group in groups:
             results, invalids = self.screen_multiple_stocks(group.tickers)
-            
+
             # Filter top criteria tickers
             top_criteria_results.extend([r for r in results if r.get("Core Criteria Score", "").count("🟩") >= 4])
-            
+
             # Generate section for the group
             html_sections.append(self.generate_html_table(results, group.sector, group.subsector, invalids))
 
+        # Remove duplicates from top_criteria_results
+        unique_top_criteria = {r["Ticker"]: r for r in top_criteria_results}.values()
+
         # Generate "Top Criteria" section
         top_criteria_html = ""
-        if top_criteria_results:
+        if unique_top_criteria:
             top_criteria_html = self.generate_html_table(
-                top_criteria_results, "Top Criteria", "Tickers with Core Criteria ≥ 4", []
+                list(unique_top_criteria), "Top Criteria", "Tickers with Core Criteria ≥ 4", []
             )
 
         # Combine all sections
-        full_html_body = f"{top_criteria_html}\n" + "\n".join(html_sections)
-        html = f"""
-        <!DOCTYPE html>
-        <html lang=\"en\">
-        <head>
-          <meta charset=\"UTF-8\">
-          <title>Stock Screening Results</title>
-          <script src=\"https://cdn.tailwindcss.com\"></script>
-        </head>
-        <body class=\"bg-gray-50 text-gray-900 p-8\">
-          <div class=\"max-w-screen-2xl mx-auto\">
-            <h1 class=\"text-3xl font-bold mb-6\">📊 Stock Screening Results</h1>
-            {full_html_body}
-          </div>
-        </body>
-        </html>
-        """
+        sections_html = "\n".join(html_sections)
 
+        # Set up Jinja2 environment
+        env = Environment(loader=FileSystemLoader(os.path.dirname(__file__) + "/../"))
+        template = env.get_template("templates/index.html")
+
+        # Render the template
+        html = template.render(
+            title="Stock Screening Results",
+            top_criteria_html=top_criteria_html,
+            sections_html=sections_html,
+        )
+
+        # Save the rendered HTML to a file
         output_path = os.path.join("public", "index.html")
         os.makedirs(os.path.dirname(output_path), exist_ok=True)
         with open(output_path, "w", encoding="utf-8") as f:
             f.write(html)
 
         print(f"✅ Styled HTML saved to: {output_path}")
-        webbrowser.open(f"file://{os.path.abspath(output_path)}")
 
     def load_cached_data(self, ticker: str) -> pd.DataFrame | None:
         file_path = os.path.join(self._DATA_DIR, f"{ticker}.json")
