@@ -139,7 +139,7 @@ class RuleRunnerCommand(BaseCommand):
                     price_data = client.get_dataframe(
                         ticker,
                         frequency="daily",
-                        startDate=(datetime.now() - timedelta(days=100)).strftime("%Y-%m-%d"),
+                        startDate=(datetime.now() - timedelta(days=120)).strftime("%Y-%m-%d"),
                         endDate=datetime.now().strftime("%Y-%m-%d"),
                     )
                     price_data.rename(columns={"adjClose": "Close", "adjVolume": "Volume"}, inplace=True)
