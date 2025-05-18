@@ -1,5 +1,6 @@
 import argparse
 
+from src.market_value import MarketValueCommand
 from src.rule_runner import RuleRunnerCommand
 from src.importer import ImporterCommand
 from src.base_command import BaseCommand, CLI_Interface
@@ -35,6 +36,7 @@ def main() -> None:
     cli = CommandLineInterface()
     RuleRunnerCommand().add_to_cli(cli)
     ImporterCommand().add_to_cli(cli)
+    MarketValueCommand().add_to_cli(cli)
     cli.execute()
 
 
