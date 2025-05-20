@@ -142,8 +142,9 @@ class RuleRunnerCommand(BaseCommand):
                         frequency="daily",
                         startDate=(datetime.now() - timedelta(days=120)).strftime("%Y-%m-%d"),
                         endDate=datetime.now().strftime("%Y-%m-%d"),
+                        columns="date,adjClose,adjVolume",
                     )
-                    print(f"------------> price_data: ticker: {ticker}\n{price_data}")
+                    # print(f"------------> price_data: ticker: {ticker}\n{price_data}")
                     price_data.rename(columns={"adjClose": "Close", "adjVolume": "Volume"}, inplace=True)
                     price_data.index = pd.to_datetime(price_data.index)
                     self.save_cached_data(ticker, price_data)
