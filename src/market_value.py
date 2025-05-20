@@ -36,7 +36,7 @@ class MarketValueCommand(BaseCommand):
                 {"date": "2025-05-13", "shares": 100},
                 {"date": "2025-05-13", "shares": 200},
             ],
-            "MSFT": [{"date": "2025-04-10", "shares": 3}, {"date": "2025-04-15", "shares": 2}],
+            # "MSFT": [{"date": "2025-04-10", "shares": 3}, {"date": "2025-04-15", "shares": 2}],
         }
 
         start_date = "2025-04-10"
@@ -54,21 +54,30 @@ class MarketValueCommand(BaseCommand):
 
             # Build a time series of cumulative shares held
             shares_series = pd.Series(0, index=df.index)
+            book_value_series = pd.Series(0.0, index=df.index)
             for purchase in purchases:
                 purchase_date = pd.to_datetime(purchase["date"])
-                if purchase_date in shares_series.index:
+                # Use the close price on the purchase date (or next available date)
+                if purchase_date in df.index:
+                    price = df.loc[purchase_date, "Close"]
                     shares_series.loc[purchase_date] += purchase["shares"]
+                    book_value_series.loc[purchase_date] += purchase["shares"] * price
                 else:
-                    # If purchase date is not a trading day, add to next available date
                     next_idx = shares_series.index.searchsorted(purchase_date)
                     if next_idx < len(shares_series):
+                        next_date = shares_series.index[next_idx]
+                        price = df.loc[next_date, "Close"]
                         shares_series.iloc[next_idx] += purchase["shares"]
+                        book_value_series.iloc[next_idx] += purchase["shares"] * price
                     else:
                         print(f"⚠️ Purchase date {purchase['date']} for {symbol} is after available data.")
 
             df["SharesHeld"] = shares_series.cumsum()
             df["MarketValue"] = df["Close"] * df["SharesHeld"]
+            df["BookValue"] = book_value_series.cumsum()
             all_prices[symbol] = df["MarketValue"].rename(symbol)
+            # Store book value for plotting
+            all_prices[f"{symbol}_BookValue"] = df["BookValue"].rename(f"{symbol}_BookValue")
             print(f"✅ Loaded {symbol}")
         # except Exception as e:
         #     print(f"❌ Failed to load {symbol}: {e}")
@@ -78,7 +87,7 @@ class MarketValueCommand(BaseCommand):
         # Combine into one DataFrame
         if all_prices:
             combined = pd.concat(all_prices.values(), axis=1).fillna(0)
-            combined["TotalValue"] = combined.sum(axis=1)
+            combined["TotalValue"] = combined[[k for k in combined.columns if not k.endswith("_BookValue")]].sum(axis=1)
             combined.index.name = "Date"
 
             # Plot a separate graph for each ticker
@@ -86,8 +95,20 @@ class MarketValueCommand(BaseCommand):
                 if symbol in combined:
                     fig = go.Figure()
                     fig.add_trace(
-                        go.Scatter(x=combined.index, y=combined[symbol], mode="lines", name=f"{symbol} Value")
+                        go.Scatter(x=combined.index, y=combined[symbol], mode="lines", name=f"{symbol} Market Value")
                     )
+                    # Add Book Value line
+                    book_value_col = f"{symbol}_BookValue"
+                    if book_value_col in combined:
+                        fig.add_trace(
+                            go.Scatter(
+                                x=combined.index,
+                                y=combined[book_value_col],
+                                mode="lines",
+                                name=f"{symbol} Book Value",
+                                line=dict(dash="dash", color="gray"),
+                            )
+                        )
                     fig.update_layout(
                         title=f"Daily Market Value of {symbol}",
                         xaxis_title="Date",

@@ -129,10 +129,11 @@ class RuleRunnerCommand(BaseCommand):
             else:
                 fresh_tickers.append(ticker)
 
+        config = {"session": True, "api_key": Config.get_tiingo_api_key()}
+        client = TiingoClient(config)
+
         if fresh_tickers:
             print(f"⬇️ Downloading data for tickers: {', '.join(fresh_tickers)}")
-            config = {"session": True, "api_key": Config.get_tiingo_api_key()}
-            client = TiingoClient(config)
 
             for ticker in fresh_tickers:
                 try:
@@ -142,6 +143,7 @@ class RuleRunnerCommand(BaseCommand):
                         startDate=(datetime.now() - timedelta(days=120)).strftime("%Y-%m-%d"),
                         endDate=datetime.now().strftime("%Y-%m-%d"),
                     )
+                    print(f"------------> price_data: ticker: {ticker}\n{price_data}")
                     price_data.rename(columns={"adjClose": "Close", "adjVolume": "Volume"}, inplace=True)
                     price_data.index = pd.to_datetime(price_data.index)
                     self.save_cached_data(ticker, price_data)
@@ -150,33 +152,6 @@ class RuleRunnerCommand(BaseCommand):
                     print(f"⚠️ Error loading data for {ticker} from Tiingo: {e}")
 
         return data
-
-    # def download_batch_data(self, tickers: List[str]) -> dict:
-    #     data = {}
-    #     fresh_tickers = []
-
-    #     for ticker in tickers:
-    #         cached = self.load_cached_data(ticker)
-    #         if cached is not None:
-    #             data[ticker] = cached
-    #         else:
-    #             fresh_tickers.append(ticker)
-
-    #     if fresh_tickers:
-    #         print(f"⬇️ Downloading data for tickers: {', '.join(fresh_tickers)}")
-    #         df_all = yf.download(fresh_tickers, period="90d", interval="1d", group_by="ticker", auto_adjust=False)
-    #         for ticker in fresh_tickers:
-    #             try:
-    #                 df = df_all[ticker]
-    #                 if isinstance(df.columns, pd.MultiIndex):
-    #                     df.columns = df.columns.get_level_values(0)
-    #                 df.index = pd.to_datetime(df.index)
-    #                 self.save_cached_data(ticker, df)
-    #                 data[ticker] = df
-    #             except Exception as e:
-    #                 print(f"⚠️ Error loading data for {ticker}: {e}")
-
-    #     return data
 
     def check_stock_criteria(self, ticker: str, df: pd.DataFrame) -> dict:
         if df.empty or len(df) < 60:
